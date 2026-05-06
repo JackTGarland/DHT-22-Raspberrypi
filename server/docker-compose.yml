@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: temperature
+      POSTGRES_USER: temp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /home/jack/docker/temperature:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temp -d temperature"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: temperature-app
+    restart: unless-stopped
+    ports:
+      - "8065:8000"
+    environment:
+      DATABASE_URL: postgresql://temp:${POSTGRES_PASSWORD}@db:5432/temperature
+      DEVICE_PORT: 5001        # port the server expects on each collector device
+      POLL_INTERVAL: 300       # default seconds between polls (overridable per device in the dashboard)
+      ALERT_URL: ""            # ntfy.sh-compatible webhook URL for threshold/offline alerts (leave blank to disable)
+      DATA_RETENTION_DAYS: 0   # delete readings older than N days (0 = keep forever)
+      DISPLAY_TZ: UTC          # IANA timezone for dashboard timestamps, e.g. Europe/London
+    volumes:
+      - ./devices.yaml:/app/devices.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+

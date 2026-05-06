@@ -1,0 +1,14 @@
+# Credentials — never commit these
+.env
+secrets.py
+
+# Local IDE / Claude Code settings
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store

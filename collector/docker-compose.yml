@@ -1,0 +1,15 @@
+services:
+  collector:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      SENSOR_PIN: 2             # BCM GPIO pin the DHT22 data line is connected to
+      PORT: 5001
+      INTERVAL: 300             # seconds between scheduled sensor reads
+    devices:
+      # Pi 1 / 2 / 3 / 4 / Zero / Zero 2:
+      - /dev/gpiochip0:/dev/gpiochip0
+      # Pi 5 — uncomment the line below and comment out the line above:
+      # - /dev/gpiochip4:/dev/gpiochip4

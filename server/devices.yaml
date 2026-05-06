@@ -1,0 +1,12 @@
+devices:
+  - name: Office
+    ip: 192.168.1.137
+    location: Office
+    # Optional calibration offsets (added to the raw sensor value before storing)
+    # temp_offset: 0
+    # humidity_offset: 0
+    # Optional alert thresholds — requires ALERT_URL to be set in docker-compose.yml
+    # alert_temp_max: 30
+    # alert_temp_min: 10
+    # alert_humidity_max: 80
+    # alert_humidity_min: 20

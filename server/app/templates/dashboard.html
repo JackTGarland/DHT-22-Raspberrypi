@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Climate Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f0f4f8;
+      color: #1a202c;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #2d3748;
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; letter-spacing: 0.02em; }
+    .refresh-note { font-size: 0.75rem; color: #a0aec0; }
+    .header-right { display: flex; align-items: center; gap: 0.75rem; }
+    #poll-btn, #unit-btn {
+      background: #4a5568; color: #fff; border: none; border-radius: 5px;
+      padding: 0.35rem 0.9rem; font-size: 0.8rem; cursor: pointer;
+    }
+    #poll-btn:hover:not(:disabled), #unit-btn:hover { background: #718096; }
+    #poll-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #poll-status {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    #poll-status h4 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #718096; margin-bottom: 0.6rem; }
+    .poll-row { display: flex; gap: 0.75rem; padding: 0.35rem 0;
+      font-size: 0.85rem; border-bottom: 1px solid #f0f4f8; }
+    .poll-row:last-of-type { border-bottom: none; }
+    .poll-row .pr-label { font-weight: 600; min-width: 130px; }
+    .poll-row.ok  { color: #276749; }
+    .poll-row.err { color: #c53030; }
+    #poll-reload { margin-top: 0.75rem; background: #2d3748; color: #fff;
+      border: none; border-radius: 5px; padding: 0.3rem 0.8rem;
+      font-size: 0.8rem; cursor: pointer; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+    /* ── Current readings cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #718096;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.ok      { background: #38a169; }
+    .status-dot.warning { background: #d69e2e; }
+    .status-dot.error   { background: #e53e3e; }
+    .status-dot.unknown { background: #a0aec0; }
+
+    .card-values { display: flex; gap: 1.5rem; }
+    .card-value .num { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+    .card-value .unit { font-size: 0.8rem; color: #718096; margin-top: 2px; }
+    .card-value.temp .num { color: #c53030; }
+    .card-value.hum  .num { color: #2b6cb0; }
+    .card-time { font-size: 0.7rem; color: #a0aec0; margin-top: 0.6rem; }
+    .no-data { font-size: 0.85rem; color: #a0aec0; font-style: italic; margin-top: 0.25rem; }
+
+    .card-meta { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #f0f4f8; }
+    .card-meta-row { display: flex; justify-content: space-between; font-size: 0.72rem;
+      color: #718096; padding: 2px 0; }
+    .card-meta-row span:last-child { color: #4a5568; font-weight: 500; }
+    .card-interval { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.5rem; font-size: 0.72rem; color: #718096; }
+    .card-interval input[type=number] { width: 62px; padding: 2px 5px; font-size: 0.72rem;
+      border: 1px solid #e2e8f0; border-radius: 3px; }
+    .card-interval button { padding: 2px 8px; font-size: 0.72rem; background: #2d3748;
+      color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+    .card-interval button:hover { background: #4a5568; }
+
+    /* ── History section ── */
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .history-header h2 { font-size: 1rem; font-weight: 600; }
+    .history-controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+    .range-btns { display: flex; gap: 0.35rem; }
+    .range-btns button {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 5px;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: #4a5568;
+      transition: background 0.15s, color 0.15s;
+    }
+    .range-btns button:hover { background: #edf2f7; }
+    .range-btns button.active { background: #2d3748; color: #fff; border-color: #2d3748; }
+
+    .date-range { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #718096; }
+    .date-range input[type=date] {
+      padding: 0.28rem 0.5rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      color: #4a5568;
+      background: #fff;
+    }
+    .date-range input[type=date]:invalid { border-color: #fc8181; }
+    #date-apply {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 5px;
+      padding: 0.3rem 0.75rem; font-size: 0.8rem; cursor: pointer; color: #4a5568;
+      transition: background 0.15s, color 0.15s;
+    }
+    #date-apply:hover { background: #edf2f7; }
+    #date-apply.active { background: #2d3748; color: #fff; border-color: #2d3748; }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+      gap: 1.25rem;
+    }
+    .chart-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .chart-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .chart-card-header h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #4a5568;
+    }
+    .export-btn {
+      font-size: 0.72rem;
+      color: #718096;
+      text-decoration: none;
+      padding: 0.18rem 0.5rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .export-btn:hover { background: #edf2f7; color: #4a5568; }
+
+    .chart-wrap { position: relative; height: 200px; }
+    .chart-empty {
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #a0aec0;
+      font-size: 0.85rem;
+    }
+
+    /* ── Stats section (inside chart cards) ── */
+    .chart-stats { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #f0f4f8; }
+    .stats-period { font-size: 0.7rem; color: #a0aec0; margin-bottom: 0.45rem; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 5rem repeat(3, 1fr);
+      gap: 2px 0;
+      font-size: 0.75rem;
+    }
+    .stats-grid .sh { color: #a0aec0; text-align: center; font-size: 0.68rem; padding-bottom: 2px; }
+    .stats-grid .sl { color: #718096; display: flex; align-items: center; }
+    .stats-grid .sv { text-align: center; font-weight: 600; padding: 1px 0; }
+    .stats-grid .sv.t { color: #c53030; }
+    .stats-grid .sv.h { color: #2b6cb0; }
+    .stats-no-data { font-size: 0.75rem; color: #a0aec0; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Climate Monitor</h1>
+  <div class="header-right">
+    <button id="unit-btn" onclick="toggleUnit()">°F</button>
+    <button id="poll-btn" onclick="forcePoll()">Refresh now</button>
+    <span class="refresh-note" id="updated">—</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Poll results panel (hidden until Refresh now is clicked) -->
+  <div id="poll-status" hidden>
+    <h4>Poll results</h4>
+    <div id="poll-rows"></div>
+    <button id="poll-reload" onclick="location.reload()" hidden>Reload page</button>
+  </div>
+
+  <!-- Current readings -->
+  <div class="cards">
+    {% for name, device in devices.items() %}
+    {% set r = latest.get(name) %}
+    <div class="card">
+      <div class="card-label">
+        <span class="status-dot {{ statuses[name] }}"></span>{{ device.location }}
+      </div>
+      {% if r %}
+        <div class="card-values">
+          <div class="card-value temp">
+            <div class="num" data-c="{{ "%.1f"|format(r.temperature) }}">{{ "%.1f"|format(r.temperature) }}</div>
+            <div class="unit">°C</div>
+          </div>
+          <div class="card-value hum">
+            <div class="num">{{ "%.1f"|format(r.humidity) }}</div>
+            <div class="unit">% RH</div>
+          </div>
+        </div>
+        <div class="card-time">{{ (r.recorded_at | localtime).strftime("%d %b %H:%M") }}</div>
+      {% else %}
+        <div class="no-data">No readings yet</div>
+      {% endif %}
+      <div class="card-meta">
+        <div class="card-meta-row"><span>IP</span><span>{{ device.ip }}</span></div>
+        <div class="card-meta-row"><span>Next poll</span><span>{{ next_polls[name] }}</span></div>
+        <div class="card-interval">
+          <span>Every</span>
+          <input type="number" id="iv-{{ name }}" value="{{ intervals[name] }}" min="10" max="86400">
+          <span>s</span>
+          <button onclick="updateInterval('{{ name }}', this)">Set</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- History charts -->
+  <div class="history-header">
+    <h2>History</h2>
+    <div class="history-controls">
+      <div class="range-btns">
+        <button data-hours="1">1h</button>
+        <button data-hours="6">6h</button>
+        <button data-hours="24" class="active">24h</button>
+        <button data-hours="168">7d</button>
+      </div>
+      <div class="date-range">
+        <input type="date" id="date-from" onchange="validateDate(this)">
+        <span>—</span>
+        <input type="date" id="date-to" onchange="validateDate(this)">
+        <button id="date-apply" onclick="applyDateRange()">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    {% for name, device in devices.items() %}
+    <div class="chart-card" data-device="{{ name }}">
+      <div class="chart-card-header">
+        <h3>{{ device.location }}</h3>
+        <a id="export-{{ name }}" href="/api/export?device={{ name }}" class="export-btn" download>↓ CSV</a>
+      </div>
+      <div class="chart-wrap"><canvas></canvas></div>
+      <div class="chart-stats" id="stats-{{ name }}">
+        <div class="stats-no-data">Loading…</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+<script>
+  const charts    = {};
+  const chartData = {};   // device -> [{x, c, h}] raw celsius data
+  const lastStats = {};   // device -> {s, period}
+  let currentHours    = 24;
+  let availableDates  = new Set();
+  let useFahrenheit   = false;
+
+  function toF(c) {
+    return Math.round((c * 9 / 5 + 32) * 10) / 10;
+  }
+
+  // Insert null points at gaps larger than 2.5× the median interval
+  function applyGaps(data) {
+    if (data.length < 2) return data;
+    const sample = data.slice(0, 21);
+    const gaps = [];
+    for (let i = 1; i < sample.length; i++) {
+      gaps.push(new Date(sample[i].x) - new Date(sample[i - 1].x));
+    }
+    gaps.sort((a, b) => a - b);
+    const median    = gaps[Math.floor(gaps.length / 2)];
+    const threshold = Math.max(median * 2.5, 60000);
+
+    const result = [data[0]];
+    for (let i = 1; i < data.length; i++) {
+      const gap = new Date(data[i].x) - new Date(data[i - 1].x);
+      if (gap > threshold) {
+        result.push({ x: new Date(new Date(data[i - 1].x).getTime() + 1000).toISOString(), y: null });
+      }
+      result.push(data[i]);
+    }
+    return result;
+  }
+
+  function buildChart(canvas) {
+    return new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Temp (°C)',
+            yAxisID: 'yTemp',
+            borderColor: '#c53030',
+            backgroundColor: 'rgba(197,48,48,0.08)',
+            borderWidth: 1.5,
+            pointRadius: 2,
+            tension: 0.3,
+            data: [],
+          },
+          {
+            label: 'Humidity (%)',
+            yAxisID: 'yHum',
+            borderColor: '#2b6cb0',
+            backgroundColor: 'rgba(43,108,176,0.08)',
+            borderWidth: 1.5,
+            pointRadius: 2,
+            tension: 0.3,
+            data: [],
+          },
+        ],
+      },
+      options: {
+        spanGaps: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { boxWidth: 10, font: { size: 11 } } },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'dd MMM HH:mm' },
+            grid: { display: false },
+            ticks: { font: { size: 10 }, maxTicksLimit: 8 },
+          },
+          yTemp: {
+            type: 'linear',
+            position: 'left',
+            title: { display: true, text: '°C', font: { size: 10 } },
+            ticks: { font: { size: 10 } },
+          },
+          yHum: {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: '%', font: { size: 10 } },
+            ticks: { font: { size: 10 } },
+            grid: { drawOnChartArea: false },
+          },
+        },
+      },
+    });
+  }
+
+  function initCharts() {
+    document.querySelectorAll('.chart-card').forEach(card => {
+      const canvas = card.querySelector('canvas');
+      charts[card.dataset.device] = buildChart(canvas);
+    });
+  }
+
+  function renderChartData(device, animate) {
+    const chart = charts[device];
+    const data  = chartData[device] || [];
+    const tempPts = data.map(r => ({ x: r.x, y: useFahrenheit ? toF(r.c) : r.c }));
+    const humPts  = data.map(r => ({ x: r.x, y: r.h }));
+    chart.data.datasets[0].data = applyGaps(tempPts);
+    chart.data.datasets[1].data = applyGaps(humPts);
+    animate === false ? chart.update('none') : chart.update();
+  }
+
+  function _renderStats(device) {
+    const el = document.getElementById(`stats-${device}`);
+    const entry = lastStats[device];
+    if (!entry || !entry.s || entry.s.no_data) {
+      el.innerHTML = '<div class="stats-no-data">No data for this period</div>';
+      return;
+    }
+    const { s, period } = entry;
+    const t     = v => useFahrenheit ? toF(v) : v;
+    const tUnit = useFahrenheit ? '°F' : '°C';
+    el.innerHTML = `
+      <div class="stats-period">${period}</div>
+      <div class="stats-grid">
+        <div></div>
+        <div class="sh">Avg</div><div class="sh">High</div><div class="sh">Low</div>
+        <div class="sl">Temp</div>
+        <div class="sv t">${t(s.avg_temp)}${tUnit}</div>
+        <div class="sv t">${t(s.max_temp)}${tUnit}</div>
+        <div class="sv t">${t(s.min_temp)}${tUnit}</div>
+        <div class="sl">Humidity</div>
+        <div class="sv h">${s.avg_hum}%</div>
+        <div class="sv h">${s.max_hum}%</div>
+        <div class="sv h">${s.min_hum}%</div>
+      </div>`;
+  }
+
+  function renderStats(device, s, period) {
+    lastStats[device] = { s, period };
+    _renderStats(device);
+  }
+
+  function applyUnit() {
+    // Update current-reading cards
+    document.querySelectorAll('.card-value.temp').forEach(el => {
+      const numEl  = el.querySelector('.num');
+      const unitEl = el.querySelector('.unit');
+      const c = parseFloat(numEl.dataset.c);
+      if (!isNaN(c)) numEl.textContent = useFahrenheit ? toF(c) : parseFloat(numEl.dataset.c).toFixed(1);
+      unitEl.textContent = useFahrenheit ? '°F' : '°C';
+    });
+    // Update charts and stats
+    Object.keys(charts).forEach(device => {
+      const chart = charts[device];
+      chart.options.scales.yTemp.title.text = useFahrenheit ? '°F' : '°C';
+      chart.data.datasets[0].label = useFahrenheit ? 'Temp (°F)' : 'Temp (°C)';
+      renderChartData(device, false);
+      _renderStats(device);
+    });
+  }
+
+  function toggleUnit() {
+    useFahrenheit = !useFahrenheit;
+    document.getElementById('unit-btn').textContent = useFahrenheit ? '°C' : '°F';
+    applyUnit();
+  }
+
+  function updateExportLinks(params) {
+    document.querySelectorAll('[id^="export-"]').forEach(el => {
+      const device = el.id.replace('export-', '');
+      const q = new URLSearchParams({ device, ...params });
+      el.href = `/api/export?${q}`;
+    });
+  }
+
+  const PERIOD_LABELS = {
+    1: 'Last hour', 6: 'Last 6 hours', 24: 'Last 24 hours', 168: 'Last 7 days',
+  };
+
+  function fmtDate(dateStr) {
+    return new Date(dateStr + 'T12:00:00Z')
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  async function loadStats(params, period) {
+    const cards = [...document.querySelectorAll('.chart-card')];
+    await Promise.all(cards.map(async card => {
+      const device = card.dataset.device;
+      const q   = new URLSearchParams({ device, ...params });
+      const res = await fetch(`/api/stats?${q}`);
+      renderStats(device, await res.json(), period);
+    }));
+  }
+
+  async function loadHistory(hours) {
+    const period = PERIOD_LABELS[hours] || `Last ${hours}h`;
+    const params = { hours };
+    const cards  = [...document.querySelectorAll('.chart-card')];
+    await Promise.all([
+      Promise.all(cards.map(async card => {
+        const device = card.dataset.device;
+        const res  = await fetch(`/api/history?device=${encodeURIComponent(device)}&hours=${hours}`);
+        const data = await res.json();
+        chartData[device] = data.map(r => ({ x: r.recorded_at, c: r.temperature, h: r.humidity }));
+        renderChartData(device, true);
+      })),
+      loadStats(params, period),
+    ]);
+    updateExportLinks(params);
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  async function loadHistoryRange(from, to) {
+    const period = from === to ? fmtDate(from) : `${fmtDate(from)} – ${fmtDate(to)}`;
+    const params = { start: from, end: to };
+    const cards  = [...document.querySelectorAll('.chart-card')];
+    await Promise.all([
+      Promise.all(cards.map(async card => {
+        const device = card.dataset.device;
+        const res  = await fetch(`/api/history?device=${encodeURIComponent(device)}&start=${from}&end=${to}`);
+        const data = await res.json();
+        chartData[device] = data.map(r => ({ x: r.recorded_at, c: r.temperature, h: r.humidity }));
+        renderChartData(device, true);
+      })),
+      loadStats(params, period),
+    ]);
+    updateExportLinks(params);
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  async function initDatePicker() {
+    const res  = await fetch('/api/dates');
+    const data = await res.json();
+    availableDates = new Set(data.dates);
+
+    const fromEl = document.getElementById('date-from');
+    const toEl   = document.getElementById('date-to');
+
+    if (data.dates.length) {
+      const min = data.dates[0];
+      const max = data.dates[data.dates.length - 1];
+      fromEl.min = min;  fromEl.max = max;
+      toEl.min   = min;  toEl.max   = max;
+    }
+  }
+
+  function validateDate(input) {
+    if (!input.value) { input.setCustomValidity(''); return; }
+    if (!availableDates.has(input.value)) {
+      input.setCustomValidity('No data for this date');
+      input.reportValidity();
+    } else {
+      input.setCustomValidity('');
+    }
+  }
+
+  async function applyDateRange() {
+    const fromEl = document.getElementById('date-from');
+    const toEl   = document.getElementById('date-to');
+    const from   = fromEl.value;
+    const to     = toEl.value;
+
+    if (!from || !to) return;
+
+    if (from > to) {
+      fromEl.setCustomValidity('"From" must not be after "To"');
+      fromEl.reportValidity();
+      return;
+    }
+    fromEl.setCustomValidity('');
+
+    document.querySelectorAll('.range-btns button').forEach(b => b.classList.remove('active'));
+    document.getElementById('date-apply').classList.add('active');
+    await loadHistoryRange(from, to);
+  }
+
+  document.querySelectorAll('.range-btns button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.range-btns button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('date-apply').classList.remove('active');
+      currentHours = parseInt(btn.dataset.hours, 10);
+      loadHistory(currentHours);
+    });
+  });
+
+  async function forcePoll() {
+    const btn       = document.getElementById('poll-btn');
+    const statusEl  = document.getElementById('poll-status');
+    const rowsEl    = document.getElementById('poll-rows');
+    const reloadBtn = document.getElementById('poll-reload');
+
+    btn.disabled = true;
+    btn.textContent = 'Polling…';
+    reloadBtn.hidden = true;
+    rowsEl.innerHTML = '<div class="poll-row">Contacting devices…</div>';
+    statusEl.hidden = false;
+
+    try {
+      const res     = await fetch('/poll', { method: 'POST' });
+      const data    = await res.json();
+      const results = data.results || [];
+
+      if (results.length === 0) {
+        rowsEl.innerHTML = '<div class="poll-row err">No devices are configured in devices.yaml.</div>';
+        btn.disabled = false;
+        btn.textContent = 'Refresh now';
+        return;
+      }
+
+      rowsEl.innerHTML = results.map(r =>
+        r.status === 'ok'
+          ? `<div class="poll-row ok"><span class="pr-label">${r.location || r.name}</span><span>${useFahrenheit ? toF(r.temperature) + ' °F' : r.temperature + ' °C'} &nbsp;·&nbsp; ${r.humidity} % RH</span></div>`
+          : `<div class="poll-row err"><span class="pr-label">${r.location || r.name}</span><span>${r.error}</span></div>`
+      ).join('');
+
+      const anyOk  = results.some(r => r.status === 'ok');
+      const anyErr = results.some(r => r.status === 'error');
+
+      if (anyOk && !anyErr) {
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+        if (anyOk) reloadBtn.hidden = false;
+      }
+    } catch (err) {
+      rowsEl.innerHTML = `<div class="poll-row err">Could not reach the server: ${err.message}</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  }
+
+  async function updateInterval(deviceName, btn) {
+    const input    = document.getElementById(`iv-${deviceName}`);
+    const interval = parseInt(input.value, 10);
+    if (isNaN(interval) || interval < 10) {
+      input.setCustomValidity('Must be ≥ 10');
+      input.reportValidity();
+      return;
+    }
+    const res = await fetch(`/interval/${encodeURIComponent(deviceName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval }),
+    });
+    if (res.ok) {
+      const orig = btn.textContent;
+      btn.textContent = 'Saved';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  }
+
+  initCharts();
+  loadHistory(currentHours);
+  initDatePicker();
+
+  // Reload the page every 5 minutes so the current-reading cards stay fresh
+  setTimeout(() => location.reload(), 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
