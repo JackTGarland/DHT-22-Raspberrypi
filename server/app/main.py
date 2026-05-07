@@ -29,6 +29,10 @@ POLL_INTERVAL      = int(os.environ.get("POLL_INTERVAL", "300"))
 ALERT_URL          = os.environ.get("ALERT_URL", "")
 DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "0"))
 _TZ_NAME           = os.environ.get("DISPLAY_TZ", "UTC")
+LATITUDE           = os.environ.get("LATITUDE", "")
+LONGITUDE          = os.environ.get("LONGITUDE", "")
+LOCATION_NAME      = os.environ.get("LOCATION_NAME", "Outdoor")
+_OPEN_METEO_URL    = "https://api.open-meteo.com/v1/forecast"
 
 try:
     _DISPLAY_TZ = ZoneInfo(_TZ_NAME)
@@ -53,12 +57,22 @@ _consecutive_failures: dict[str, int]     = {}
 _alert_cooldown:      dict[str, datetime] = {}
 _last_cleanup:        datetime | None     = None
 
+# devices.yaml mtime cache — avoids re-parsing on every poll tick
+_devices_cache:     dict          = {}
+_devices_cache_mtime: float | None = None
+
 
 def load_devices() -> dict:
+    global _devices_cache, _devices_cache_mtime
     try:
+        mtime = Path(DEVICES_FILE).stat().st_mtime
+        if mtime == _devices_cache_mtime:
+            return _devices_cache
         with open(DEVICES_FILE) as f:
             data = yaml.safe_load(f)
-        return {d["name"]: d for d in (data or {}).get("devices", [])}
+        _devices_cache = {d["name"]: d for d in (data or {}).get("devices", [])}
+        _devices_cache_mtime = mtime
+        return _devices_cache
     except FileNotFoundError:
         log.error("devices.yaml not found at %s", DEVICES_FILE)
         return {}
@@ -230,10 +244,10 @@ async def do_poll(force: bool = False) -> list[dict]:
                      "error": "No devices found in devices.yaml"}]
 
         async with httpx.AsyncClient() as client:
-            results = [
-                await _poll_device(client, name, device, force)
+            results = await asyncio.gather(*[
+                _poll_device(client, name, device, force)
                 for name, device in devices.items()
-            ]
+            ])
 
         if force:
             for name in devices:
@@ -264,9 +278,12 @@ async def poll_devices():
         if due:
             async with _poll_lock:
                 async with httpx.AsyncClient() as client:
-                    for name, device in due.items():
-                        await _poll_device(client, name, device, force=False)
-                        _advance_next_poll(name)
+                    await asyncio.gather(*[
+                        _poll_device(client, name, device, force=False)
+                        for name, device in due.items()
+                    ])
+                for name in due:
+                    _advance_next_poll(name)
 
         if DATA_RETENTION_DAYS > 0:
             if _last_cleanup is None or (now - _last_cleanup) > timedelta(hours=24):
@@ -282,11 +299,48 @@ async def poll_devices():
         await asyncio.sleep(15)
 
 
+async def poll_weather() -> None:
+    """Fetch current conditions from Open-Meteo every hour and store them."""
+    if not LATITUDE or not LONGITUDE:
+        log.info("Weather polling disabled — set LATITUDE and LONGITUDE to enable")
+        return
+    await asyncio.sleep(10)
+    while True:
+        try:
+            params = {
+                "latitude":        LATITUDE,
+                "longitude":       LONGITUDE,
+                "current":         "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+                "wind_speed_unit": "mph",
+                "forecast_days":   1,
+            }
+            async with httpx.AsyncClient() as client:
+                res  = await client.get(_OPEN_METEO_URL, params=params, timeout=15.0)
+                data = res.json()
+            cur  = data.get("current", {})
+            temp = cur.get("temperature_2m")
+            hum  = cur.get("relative_humidity_2m")
+            code = cur.get("weather_code")
+            wind = cur.get("wind_speed_10m")
+            if temp is not None and hum is not None:
+                database.insert_weather(
+                    float(temp), float(hum), code,
+                    float(wind) if wind is not None else None,
+                    datetime.now(timezone.utc),
+                )
+                log.info("Weather: %.1f°C  %.0f%%  code=%s", temp, hum, code)
+        except Exception as exc:
+            log.error("Weather poll failed: %s", exc)
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_pool()
     database.init_db()
+    database.init_weather_table()
     asyncio.create_task(poll_devices())
+    asyncio.create_task(poll_weather())
     yield
 
 
@@ -348,6 +402,47 @@ def dashboard(request: Request):
         "intervals":  intervals,
         "statuses":   statuses,
     })
+
+
+@app.get("/api/weather")
+def current_weather():
+    if not LATITUDE or not LONGITUDE:
+        return {"available": False, "configured": False}
+    latest = database.get_latest_weather()
+    if not latest:
+        return {"available": False, "configured": True}
+    return {
+        "available":    True,
+        "configured":   True,
+        "location":     LOCATION_NAME,
+        "temperature":  latest["temperature"],
+        "humidity":     latest["humidity"],
+        "weather_code": latest["weather_code"],
+        "wind_speed":   latest["wind_speed"],
+        "recorded_at":  latest["recorded_at"].isoformat(),
+    }
+
+
+@app.get("/api/weather/history")
+def weather_history(hours: int = 24, start: str | None = None, end: str | None = None):
+    if start and end:
+        try:
+            start_dt = datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
+            end_dt   = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1)
+        except ValueError:
+            return JSONResponse({"error": "Invalid date. Use YYYY-MM-DD."}, status_code=400)
+        rows = database.get_weather_history(start=start_dt, end=end_dt)
+    else:
+        rows = database.get_weather_history(hours=hours)
+    return [
+        {"temperature": r["temperature"], "recorded_at": r["recorded_at"].isoformat()}
+        for r in rows
+    ]
+
+
+@app.get("/api/summary")
+def global_summary():
+    return database.get_global_summary()
 
 
 @app.get("/api/stats")

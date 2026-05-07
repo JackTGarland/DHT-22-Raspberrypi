@@ -53,7 +53,43 @@
       border: none; border-radius: 5px; padding: 0.3rem 0.8rem;
       font-size: 0.8rem; cursor: pointer; }
 
-    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 2rem; }
+    .page { display: flex; gap: 1.25rem; padding: 1rem 1.5rem; align-items: flex-start; }
+    .sidebar {
+      width: clamp(210px, 14vw, 280px);
+      flex-shrink: 0;
+      position: sticky;
+      top: 1rem;
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+    }
+    .main-content { flex: 1; min-width: 0; }
+
+    /* ── Sidebar stat panels ── */
+    .stat-panel {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      margin-bottom: 1rem;
+    }
+    .stat-panel-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #718096;
+      margin-bottom: 0.85rem;
+    }
+    .stat-item { padding: 0.65rem 0; border-bottom: 1px solid #f0f4f8; }
+    .stat-item:last-child { border-bottom: none; }
+    .stat-item-label { font-size: 0.68rem; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.25rem; }
+    .stat-item-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+    .stat-item-value.t { color: #c53030; }
+    .stat-item-value.h { color: #2b6cb0; }
+    .stat-item-value.outdoor { color: #2c7a7b; }
+    .stat-item-sub { font-size: 0.75rem; color: #4a5568; font-weight: 500; margin-top: 0.2rem; }
+    .stat-item-meta { font-size: 0.68rem; color: #a0aec0; margin-top: 0.1rem; }
+    .stat-placeholder { font-size: 0.8rem; color: #a0aec0; font-style: italic; }
 
     /* ── Current readings cards ── */
     .cards {
@@ -114,11 +150,11 @@
     /* ── History section ── */
     .history-header {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
       margin-bottom: 1rem;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.75rem;
     }
     .history-header h2 { font-size: 1rem; font-weight: 600; }
     .history-controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
@@ -157,7 +193,7 @@
 
     .chart-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
       gap: 1.25rem;
     }
     .chart-card {
@@ -188,9 +224,9 @@
     }
     .export-btn:hover { background: #edf2f7; color: #4a5568; }
 
-    .chart-wrap { position: relative; height: 200px; }
+    .chart-wrap { position: relative; height: clamp(200px, 30vh, 380px); }
     .chart-empty {
-      height: 200px;
+      height: clamp(200px, 30vh, 380px);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -226,7 +262,76 @@
   </div>
 </header>
 
-<div class="container">
+<div class="page">
+
+<aside class="sidebar">
+  <div class="stat-panel" id="weather-panel" hidden>
+    <div class="stat-panel-title" id="weather-panel-title">Outdoor</div>
+    <div id="wx-loading" class="stat-placeholder">Waiting for first reading…</div>
+    <div id="wx-content" hidden>
+      <div class="stat-item">
+        <div class="stat-item-label">Temperature</div>
+        <div class="stat-item-value outdoor" id="wx-temp">—</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Humidity</div>
+        <div class="stat-item-value h" id="wx-hum">—</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Conditions</div>
+        <div class="stat-item-sub" id="wx-desc" style="font-size:0.85rem;margin-top:0.15rem">—</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Wind</div>
+        <div class="stat-item-sub" id="wx-wind" style="font-size:0.85rem;margin-top:0.15rem">—</div>
+      </div>
+      <div class="stat-item-meta" id="wx-updated" style="padding-top:0.4rem;padding-bottom:0.1rem"></div>
+    </div>
+  </div>
+
+  <div class="stat-panel">
+    <div class="stat-panel-title">Network · 24h avg</div>
+    <div id="sum-loading" class="stat-placeholder">Loading…</div>
+    <div id="sum-content" hidden>
+      <div class="stat-item">
+        <div class="stat-item-label">Avg Temperature</div>
+        <div class="stat-item-value t" id="sum-avg-temp">—</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Avg Humidity</div>
+        <div class="stat-item-value h" id="sum-avg-hum">—</div>
+      </div>
+      <div class="stat-item-meta" id="sum-device-count" style="padding-top:0.4rem;padding-bottom:0.1rem"></div>
+    </div>
+  </div>
+
+  <div class="stat-panel">
+    <div class="stat-panel-title">All-time Records</div>
+    <div id="rec-loading" class="stat-placeholder">Loading…</div>
+    <div id="rec-content" hidden>
+      <div class="stat-item">
+        <div class="stat-item-label">Record High Temp</div>
+        <div class="stat-item-value t" id="rec-high-temp">—</div>
+        <div class="stat-item-sub" id="rec-high-temp-loc"></div>
+        <div class="stat-item-meta" id="rec-high-temp-when"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Record Low Temp</div>
+        <div class="stat-item-value t" id="rec-low-temp">—</div>
+        <div class="stat-item-sub" id="rec-low-temp-loc"></div>
+        <div class="stat-item-meta" id="rec-low-temp-when"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-item-label">Peak Humidity</div>
+        <div class="stat-item-value h" id="rec-high-hum">—</div>
+        <div class="stat-item-sub" id="rec-high-hum-loc"></div>
+        <div class="stat-item-meta" id="rec-high-hum-when"></div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div class="main-content">
 
   <!-- Poll results panel (hidden until Refresh now is clicked) -->
   <div id="poll-status" hidden>
@@ -306,7 +411,8 @@
     {% endfor %}
   </div>
 
-</div>
+</div><!-- main-content -->
+</div><!-- page -->
 
 <script>
   const charts    = {};
@@ -315,6 +421,20 @@
   let currentHours    = 24;
   let availableDates  = new Set();
   let useFahrenheit   = false;
+  let lastSummary     = null;
+  let lastWeather     = null;
+  let outdoorData     = [];   // [{x, c}] outdoor temp history in °C
+
+  const WMO_CODES = {
+    0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
+    45:'Fog', 48:'Icy fog',
+    51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle',
+    61:'Light rain', 63:'Rain', 65:'Heavy rain',
+    71:'Light snow', 73:'Snow', 75:'Heavy snow', 77:'Snow grains',
+    80:'Light showers', 81:'Showers', 82:'Heavy showers',
+    85:'Snow showers', 86:'Heavy snow showers',
+    95:'Thunderstorm', 96:'Thunderstorm + hail', 99:'Thunderstorm + heavy hail',
+  };
 
   function toF(c) {
     return Math.round((c * 9 / 5 + 32) * 10) / 10;
@@ -368,6 +488,17 @@
             tension: 0.3,
             data: [],
           },
+          {
+            label: 'Outdoor (°C)',
+            yAxisID: 'yTemp',
+            borderColor: '#2c7a7b',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            tension: 0.3,
+            data: [],
+          },
         ],
       },
       options: {
@@ -415,8 +546,10 @@
     const data  = chartData[device] || [];
     const tempPts = data.map(r => ({ x: r.x, y: useFahrenheit ? toF(r.c) : r.c }));
     const humPts  = data.map(r => ({ x: r.x, y: r.h }));
+    const outdoorPts = outdoorData.map(r => ({ x: r.x, y: useFahrenheit ? toF(r.c) : r.c }));
     chart.data.datasets[0].data = applyGaps(tempPts);
     chart.data.datasets[1].data = applyGaps(humPts);
+    chart.data.datasets[2].data = applyGaps(outdoorPts);
     animate === false ? chart.update('none') : chart.update();
   }
 
@@ -451,6 +584,98 @@
     _renderStats(device);
   }
 
+  function _renderWeather() {
+    const data = lastWeather;
+    if (!data || !data.available) return;
+    const tUnit = useFahrenheit ? '°F' : '°C';
+    const temp  = useFahrenheit ? toF(data.temperature) : data.temperature;
+    document.getElementById('wx-temp').textContent = temp + tUnit;
+    document.getElementById('wx-hum').textContent  = data.humidity + '%';
+    document.getElementById('wx-desc').textContent = WMO_CODES[data.weather_code] ?? '—';
+    document.getElementById('wx-wind').textContent = data.wind_speed != null ? data.wind_speed + ' mph' : '—';
+    document.getElementById('wx-updated').textContent =
+      'Updated ' + new Date(data.recorded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('wx-loading').hidden = true;
+    document.getElementById('wx-content').hidden = false;
+  }
+
+  async function loadWeather() {
+    try {
+      const res  = await fetch('/api/weather');
+      const data = await res.json();
+      if (!data.configured) return;
+      document.getElementById('weather-panel').hidden = false;
+      if (data.location) document.getElementById('weather-panel-title').textContent = data.location;
+      if (data.available) {
+        lastWeather = data;
+        _renderWeather();
+      }
+    } catch (err) {
+      console.error('Weather fetch failed:', err);
+    }
+  }
+
+  function fmtWhen(iso) {
+    return new Date(iso).toLocaleString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  function _renderSummary() {
+    const data = lastSummary;
+    if (!data) return;
+    const tUnit = useFahrenheit ? '°F' : '°C';
+    const t = v => useFahrenheit ? toF(v) : v;
+
+    if (data.avg_24h) {
+      const { avg_temp, avg_hum, device_count } = data.avg_24h;
+      document.getElementById('sum-avg-temp').textContent = t(avg_temp) + tUnit;
+      document.getElementById('sum-avg-hum').textContent  = avg_hum + '%';
+      document.getElementById('sum-device-count').textContent =
+        `across ${device_count} active device${device_count !== 1 ? 's' : ''}`;
+      document.getElementById('sum-loading').hidden = true;
+      document.getElementById('sum-content').hidden = false;
+    }
+
+    const hasRecord = data.record_high_temp || data.record_low_temp || data.record_high_hum;
+    if (hasRecord) {
+      if (data.record_high_temp) {
+        const { value, location, when } = data.record_high_temp;
+        document.getElementById('rec-high-temp').textContent     = t(value) + tUnit;
+        document.getElementById('rec-high-temp-loc').textContent = location;
+        document.getElementById('rec-high-temp-when').textContent = fmtWhen(when);
+      }
+      if (data.record_low_temp) {
+        const { value, location, when } = data.record_low_temp;
+        document.getElementById('rec-low-temp').textContent     = t(value) + tUnit;
+        document.getElementById('rec-low-temp-loc').textContent = location;
+        document.getElementById('rec-low-temp-when').textContent = fmtWhen(when);
+      }
+      if (data.record_high_hum) {
+        const { value, location, when } = data.record_high_hum;
+        document.getElementById('rec-high-hum').textContent     = value + '%';
+        document.getElementById('rec-high-hum-loc').textContent = location;
+        document.getElementById('rec-high-hum-when').textContent = fmtWhen(when);
+      }
+      document.getElementById('rec-loading').hidden = true;
+      document.getElementById('rec-content').hidden = false;
+    } else {
+      document.getElementById('rec-loading').textContent = 'No data yet';
+    }
+  }
+
+  async function loadSummary() {
+    try {
+      const res  = await fetch('/api/summary');
+      lastSummary = await res.json();
+      _renderSummary();
+    } catch (err) {
+      document.getElementById('sum-loading').textContent = 'Unavailable';
+      document.getElementById('rec-loading').textContent = 'Unavailable';
+    }
+  }
+
   function applyUnit() {
     // Update current-reading cards
     document.querySelectorAll('.card-value.temp').forEach(el => {
@@ -460,11 +685,15 @@
       if (!isNaN(c)) numEl.textContent = useFahrenheit ? toF(c) : parseFloat(numEl.dataset.c).toFixed(1);
       unitEl.textContent = useFahrenheit ? '°F' : '°C';
     });
+    // Update sidebar panels
+    _renderSummary();
+    _renderWeather();
     // Update charts and stats
     Object.keys(charts).forEach(device => {
       const chart = charts[device];
       chart.options.scales.yTemp.title.text = useFahrenheit ? '°F' : '°C';
       chart.data.datasets[0].label = useFahrenheit ? 'Temp (°F)' : 'Temp (°C)';
+      chart.data.datasets[2].label = useFahrenheit ? 'Outdoor (°F)' : 'Outdoor (°C)';
       renderChartData(device, false);
       _renderStats(device);
     });
@@ -507,16 +736,21 @@
     const period = PERIOD_LABELS[hours] || `Last ${hours}h`;
     const params = { hours };
     const cards  = [...document.querySelectorAll('.chart-card')];
+    const wxFetch = fetch(`/api/weather/history?hours=${hours}`)
+      .then(r => r.json())
+      .then(data => { outdoorData = data.map(r => ({ x: r.recorded_at, c: r.temperature })); })
+      .catch(() => { outdoorData = []; });
     await Promise.all([
       Promise.all(cards.map(async card => {
         const device = card.dataset.device;
         const res  = await fetch(`/api/history?device=${encodeURIComponent(device)}&hours=${hours}`);
         const data = await res.json();
         chartData[device] = data.map(r => ({ x: r.recorded_at, c: r.temperature, h: r.humidity }));
-        renderChartData(device, true);
       })),
       loadStats(params, period),
+      wxFetch,
     ]);
+    cards.forEach(card => renderChartData(card.dataset.device, true));
     updateExportLinks(params);
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   }
@@ -525,16 +759,21 @@
     const period = from === to ? fmtDate(from) : `${fmtDate(from)} – ${fmtDate(to)}`;
     const params = { start: from, end: to };
     const cards  = [...document.querySelectorAll('.chart-card')];
+    const wxFetch = fetch(`/api/weather/history?start=${from}&end=${to}`)
+      .then(r => r.json())
+      .then(data => { outdoorData = data.map(r => ({ x: r.recorded_at, c: r.temperature })); })
+      .catch(() => { outdoorData = []; });
     await Promise.all([
       Promise.all(cards.map(async card => {
         const device = card.dataset.device;
         const res  = await fetch(`/api/history?device=${encodeURIComponent(device)}&start=${from}&end=${to}`);
         const data = await res.json();
         chartData[device] = data.map(r => ({ x: r.recorded_at, c: r.temperature, h: r.humidity }));
-        renderChartData(device, true);
       })),
       loadStats(params, period),
+      wxFetch,
     ]);
+    cards.forEach(card => renderChartData(card.dataset.device, true));
     updateExportLinks(params);
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   }
@@ -665,6 +904,8 @@
   initCharts();
   loadHistory(currentHours);
   initDatePicker();
+  loadSummary();
+  loadWeather();
 
   // Reload the page every 5 minutes so the current-reading cards stay fresh
   setTimeout(() => location.reload(), 5 * 60 * 1000);

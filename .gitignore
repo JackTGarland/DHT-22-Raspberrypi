@@ -1,6 +1,8 @@
-# Credentials — never commit these
+# Credentials / local config — never commit these
 .env
 secrets.py
+server/devices.yaml
+server/docker-compose.yml
 
 # Local IDE / Claude Code settings
 .claude/

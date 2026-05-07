@@ -61,6 +61,14 @@ def init_db() -> None:
                 CREATE INDEX IF NOT EXISTS idx_readings_device_time
                 ON readings (device_name, recorded_at DESC)
             """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readings_temperature
+                ON readings (temperature)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readings_humidity
+                ON readings (humidity)
+            """)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -238,6 +246,156 @@ def get_export_data(device_name: str, start: datetime, end: datetime) -> list:
                 ORDER BY recorded_at ASC
             """, (device_name, start, end))
             return [dict(r) for r in cur.fetchall()]
+    finally:
+        _put(conn)
+
+
+def init_weather_table() -> None:
+    conn = _get()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS weather (
+                    id           SERIAL PRIMARY KEY,
+                    temperature  REAL        NOT NULL,
+                    humidity     REAL        NOT NULL,
+                    weather_code INT,
+                    wind_speed   REAL,
+                    recorded_at  TIMESTAMPTZ NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_weather_time
+                ON weather (recorded_at DESC)
+            """)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put(conn)
+
+
+def insert_weather(
+    temperature: float,
+    humidity: float,
+    weather_code: int | None,
+    wind_speed: float | None,
+    recorded_at: datetime,
+) -> None:
+    conn = _get()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO weather (temperature, humidity, weather_code, wind_speed, recorded_at)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (temperature, humidity, weather_code, wind_speed, recorded_at),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put(conn)
+
+
+def get_latest_weather() -> dict | None:
+    conn = _get()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT temperature, humidity, weather_code, wind_speed, recorded_at
+                FROM weather ORDER BY recorded_at DESC LIMIT 1
+            """)
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        _put(conn)
+
+
+def get_weather_history(
+    hours: int = 24,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list:
+    if start and end:
+        s, e = start, end
+    else:
+        e = datetime.now(timezone.utc)
+        s = e - timedelta(hours=hours)
+    conn = _get()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT temperature, recorded_at
+                FROM weather
+                WHERE recorded_at >= %s AND recorded_at < %s
+                ORDER BY recorded_at ASC
+            """, (s, e))
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        _put(conn)
+
+
+def get_global_summary() -> dict:
+    """All-time records and cross-device 24-hour averages."""
+    conn = _get()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT temperature, location, recorded_at
+                FROM readings ORDER BY temperature DESC LIMIT 1
+            """)
+            max_t = cur.fetchone()
+
+            cur.execute("""
+                SELECT temperature, location, recorded_at
+                FROM readings ORDER BY temperature ASC LIMIT 1
+            """)
+            min_t = cur.fetchone()
+
+            cur.execute("""
+                SELECT humidity, location, recorded_at
+                FROM readings ORDER BY humidity DESC LIMIT 1
+            """)
+            max_h = cur.fetchone()
+
+            cur.execute("""
+                SELECT
+                    AVG(temperature) AS avg_temp,
+                    AVG(humidity)    AS avg_hum,
+                    COUNT(DISTINCT device_name) AS device_count
+                FROM readings
+                WHERE recorded_at >= NOW() - INTERVAL '24 hours'
+            """)
+            avg = cur.fetchone()
+
+        out: dict = {}
+        if max_t and max_t["temperature"] is not None:
+            out["record_high_temp"] = {
+                "value":    round(float(max_t["temperature"]), 1),
+                "location": max_t["location"],
+                "when":     max_t["recorded_at"].isoformat(),
+            }
+        if min_t and min_t["temperature"] is not None:
+            out["record_low_temp"] = {
+                "value":    round(float(min_t["temperature"]), 1),
+                "location": min_t["location"],
+                "when":     min_t["recorded_at"].isoformat(),
+            }
+        if max_h and max_h["humidity"] is not None:
+            out["record_high_hum"] = {
+                "value":    round(float(max_h["humidity"]), 1),
+                "location": max_h["location"],
+                "when":     max_h["recorded_at"].isoformat(),
+            }
+        if avg and avg["avg_temp"] is not None:
+            out["avg_24h"] = {
+                "avg_temp":     round(float(avg["avg_temp"]), 1),
+                "avg_hum":      round(float(avg["avg_hum"]), 1),
+                "device_count": int(avg["device_count"]),
+            }
+        return out
     finally:
         _put(conn)
 
